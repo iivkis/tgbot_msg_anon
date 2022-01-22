@@ -8,7 +8,10 @@ import (
 
 var db *gorm.DB
 
-var Users = new(users)
+var (
+	Users    = new(users)
+	Messages = new(messages)
+)
 
 func init() {
 	//init database
@@ -24,6 +27,7 @@ func init() {
 		//create migrations
 		if err := db.AutoMigrate(
 			&UserModel{},
+			&MessageModel{},
 		); err != nil {
 			panic(err)
 		}

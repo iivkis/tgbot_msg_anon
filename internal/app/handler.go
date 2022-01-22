@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"tgbot_msg_anon/internal/actions"
+	"tgbot_msg_anon/internal/cfg"
+	"tgbot_msg_anon/internal/markup"
 	"tgbot_msg_anon/internal/recipients"
 	"tgbot_msg_anon/internal/replicas"
 	"tgbot_msg_anon/internal/repository"
@@ -14,16 +16,16 @@ import (
 )
 
 func commandsHandler(upd *tgbotapi.Update) {
-	var ID = upd.Message.From.ID
+	var userID = upd.Message.From.ID
 
-	recipients.Clear(ID)
-	actions.Clear(ID)
+	recipients.Clear(userID)
+	actions.Clear(userID)
 
 	/*КОМАНДЫ ДЛЯ ВСЕХ ПОЛЬЗОВАТЕЛЕЙ*/
 	{
 		//start
 		if ok, _ := regexp.MatchString("^/start$", upd.Message.Text); ok {
-			msg := tgbotapi.NewMessage(ID, replicas.Get("my_link", ID))
+			msg := tgbotapi.NewMessage(userID, replicas.Get("my_link", cfg.Env.BotUsername, userID))
 			bot.Send(msg)
 			return
 		}
@@ -32,10 +34,10 @@ func commandsHandler(upd *tgbotapi.Update) {
 		if ok, _ := regexp.MatchString("^/start [0-9]*$", upd.Message.Text); ok {
 			recipID, _ := strconv.ParseInt(strings.Split(upd.Message.Text, " ")[1], 10, 64)
 
-			recipients.Set(ID, recipID)
-			actions.Set(ID, actions.WAIT_ANON_MSG)
+			recipients.Set(userID, recipID)
+			actions.Set(userID, actions.WAIT_ANON_MSG)
 
-			msg := tgbotapi.NewMessage(ID, replicas.Get("wait_anon_msg", ID))
+			msg := tgbotapi.NewMessage(userID, replicas.Get("wait_anon_msg", cfg.Env.BotUsername, userID))
 			msg.ParseMode = "html"
 
 			bot.Send(msg)
@@ -44,14 +46,22 @@ func commandsHandler(upd *tgbotapi.Update) {
 
 		//get personal link
 		if ok, _ := regexp.MatchString("^/get$", upd.Message.Text); ok {
-			msg := tgbotapi.NewMessage(ID, replicas.Get("my_link", ID))
+			msg := tgbotapi.NewMessage(userID, replicas.Get("my_link", cfg.Env.BotUsername, userID))
 			bot.Send(msg)
 			return
 		}
 
 		//узнать id
 		if ok, _ := regexp.MatchString("^/id$", upd.Message.Text); ok {
-			msg := tgbotapi.NewMessage(ID, replicas.Get("my_id", ID))
+			msg := tgbotapi.NewMessage(userID, replicas.Get("my_id", userID))
+			msg.ParseMode = "html"
+			bot.Send(msg)
+			return
+		}
+
+		//отменить действия и вернуться в меню
+		if ok, _ := regexp.MatchString("^/cancel$", upd.Message.Text); ok {
+			msg := tgbotapi.NewMessage(userID, replicas.Get("cancel_action"))
 			msg.ParseMode = "html"
 			bot.Send(msg)
 			return
@@ -60,32 +70,26 @@ func commandsHandler(upd *tgbotapi.Update) {
 
 	//Проверка на админа
 	if !isAdmin(upd) {
-		msg := tgbotapi.NewMessage(ID, "Если ты хочешь отправить кому-то сообщение, то перейди по его ссылке")
+		msg := tgbotapi.NewMessage(userID, "Если ты хочешь отправить кому-то сообщение, то перейди по его ссылке")
 		bot.Send(msg)
 		return
 	}
 
 	/*КОМАНДЫ ТОЛЬКО ДЛЯ АДМИНОВ*/
 	{
-		//отменить действия и вернуться в меню
-		if ok, _ := regexp.MatchString("^/cancel$", upd.Message.Text); ok {
-			msg := tgbotapi.NewMessage(ID, replicas.Get("cancel_action"))
-			bot.Send(msg)
-			return
-		}
-
 		//рассылка
 		if ok, _ := regexp.MatchString("^/mailing$", upd.Message.Text); ok {
-			msg := tgbotapi.NewMessage(ID, replicas.Get("new_mailing"))
+			msg := tgbotapi.NewMessage(userID, replicas.Get("new_mailing"))
+			msg.ParseMode = "html"
 			bot.Send(msg)
 
-			actions.Set(ID, actions.NEW_MAILING)
+			actions.Set(userID, actions.NEW_MAILING)
 			return
 		}
 
-		//кол-во пользователей
-		if ok, _ := regexp.MatchString("^/amount$", upd.Message.Text); ok {
-			msg := tgbotapi.NewMessage(ID, replicas.Get("amount_users", len(repository.Users.GetAllTelegramID())))
+		//статистика
+		if ok, _ := regexp.MatchString("^/stats$", upd.Message.Text); ok {
+			msg := tgbotapi.NewMessage(userID, replicas.Get("bot_stats", repository.Users.Count(), repository.Messages.Count()))
 			msg.ParseMode = "html"
 			bot.Send(msg)
 			return
@@ -93,13 +97,14 @@ func commandsHandler(upd *tgbotapi.Update) {
 
 		//панель команд
 		if ok, _ := regexp.MatchString("^/panel$", upd.Message.Text); ok {
-			msg := tgbotapi.NewMessage(ID, replicas.Get("commands_panel"))
+			msg := tgbotapi.NewMessage(userID, replicas.Get("commands_panel"))
+			msg.ParseMode = "html"
 			bot.Send(msg)
 			return
 		}
 	}
 
-	msg := tgbotapi.NewMessage(ID, "Даже у админов нет таких команд.. будь внимательнее :/")
+	msg := tgbotapi.NewMessage(userID, "Даже у админов нет таких команд.. будь внимательнее :/")
 	bot.Send(msg)
 
 }
@@ -112,6 +117,7 @@ func textHandler(upd *tgbotapi.Update) {
 		recipID := recipients.Get(ID)
 
 		msg := tgbotapi.NewMessage(recipID, replicas.Get("send_anon_msg", upd.Message.MessageID, upd.Message.Text))
+		msg.ReplyMarkup = markup.InlineAnonMSG(upd.Message.MessageID)
 		msg.ParseMode = "html"
 
 		if _, err := bot.Send(msg); err != nil {
@@ -120,8 +126,13 @@ func textHandler(upd *tgbotapi.Update) {
 			msg.ParseMode = "html"
 			bot.Send(msg)
 		} else {
-			msg = tgbotapi.NewMessage(ID, replicas.Get("success_send_anon_msg", ID))
+			if err := repository.Messages.Add(upd.Message.MessageID, ID, recipID); err != nil {
+				fmt.Println(err)
+			}
+
+			msg = tgbotapi.NewMessage(ID, replicas.Get("success_send_anon_msg", cfg.Env.BotUsername, ID))
 			msg.ParseMode = "html"
+
 			bot.Send(msg)
 		}
 
@@ -133,7 +144,7 @@ func textHandler(upd *tgbotapi.Update) {
 	if actions.If(ID, actions.NEW_MAILING) {
 		ids := repository.Users.GetAllTelegramID()
 
-		var withErr uint
+		var withErr int
 		for _, tgID := range ids {
 			msg := tgbotapi.NewMessage(tgID, upd.Message.Text)
 			msg.ParseMode = "html"
@@ -142,7 +153,26 @@ func textHandler(upd *tgbotapi.Update) {
 			}
 		}
 
-		msg := tgbotapi.NewMessage(ID, replicas.Get("mailing_report", len(ids), withErr))
+		msg := tgbotapi.NewMessage(ID, replicas.Get("mailing_report", len(ids), withErr, len(ids)-withErr))
+		msg.ParseMode = "html"
+		bot.Send(msg)
+
+		actions.Clear(ID)
+		return
+	}
+
+	//ответ на сообщение
+	if actions.If(ID, actions.REPLY_TO_MESSAGE) {
+		replyMsgID := repository.Users.GetReplyMsgID(ID)
+		message := repository.Messages.Get(replyMsgID)
+
+		msg := tgbotapi.NewMessage(message.FromID, replicas.Get("new_reply_message", upd.Message.Text))
+		msg.ReplyToMessageID = replyMsgID
+		msg.ParseMode = "html"
+
+		bot.Send(msg)
+
+		msg = tgbotapi.NewMessage(ID, replicas.Get("success_send_reply_message"))
 		msg.ParseMode = "html"
 		bot.Send(msg)
 
@@ -152,4 +182,27 @@ func textHandler(upd *tgbotapi.Update) {
 
 	msg := tgbotapi.NewMessage(upd.Message.From.ID, "Если ты хочешь отправить кому-то сообщение, то перейди по его ссылке")
 	bot.Send(msg)
+}
+
+func callbackHandler(upd *tgbotapi.Update) {
+	var ID = upd.CallbackQuery.From.ID
+
+	//callback ответа на сообщение
+	if ok, _ := regexp.MatchString("^reply [0-9]*$", upd.CallbackQuery.Data); ok {
+		replyMessageID, _ := strconv.Atoi(strings.Split(upd.CallbackData(), " ")[1])
+
+		repository.Users.SetReplyMsgID(ID, replyMessageID)
+		actions.Set(ID, actions.REPLY_TO_MESSAGE)
+
+		msg := tgbotapi.NewMessage(ID, replicas.Get("reply_text"))
+		msg.ReplyToMessageID = upd.CallbackQuery.Message.MessageID
+		msg.ParseMode = "html"
+		bot.Send(msg)
+
+		edit := tgbotapi.NewEditMessageText(upd.CallbackQuery.From.ID, upd.CallbackQuery.Message.MessageID, upd.CallbackQuery.Message.Text)
+		bot.Send(edit)
+
+		fmt.Println(upd.CallbackQuery.Message.Text)
+		return
+	}
 }

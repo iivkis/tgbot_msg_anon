@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"tgbot_msg_anon/internal/cfg"
 	"tgbot_msg_anon/internal/repository"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -11,7 +12,7 @@ var bot *tgbotapi.BotAPI
 
 func Launch() {
 	//init bot
-	botAPI, err := tgbotapi.NewBotAPI("5039024123:AAFno2M_B9tqk6F1rkKcXvtKAECge__zFK0")
+	botAPI, err := tgbotapi.NewBotAPI(cfg.Env.BotToken)
 	if err != nil {
 		panic(err)
 	}
@@ -29,6 +30,7 @@ func Launch() {
 	//listen channel and handle messages
 	fmt.Println("[bot:notify] Батька ждёт сообщений")
 	for upd := range updates {
+		//если пришло сообщение
 		if upd.Message != nil {
 			//регаем юзера в базе
 			usr := repository.UserModel{TelegramID: upd.Message.From.ID}
@@ -40,6 +42,13 @@ func Launch() {
 			} else if upd.Message.Text != "" {
 				go textHandler(&upd)
 			}
+			continue
+		}
+
+		//если пришло уведомление
+		if upd.CallbackQuery != nil {
+			fmt.Printf("[bot:callback] From: http://t.me/%.20s | Data:\"%s\"\n", upd.CallbackQuery.From.UserName, upd.CallbackData())
+			go callbackHandler(&upd)
 		}
 	}
 }
